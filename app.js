@@ -48,6 +48,7 @@ const STATS = {
 };
 // Weights for the blended verdict; windows with no games drop out and the rest are rescaled.
 const WEIGHTS = { l10: 0.35, season: 0.25, l5: 0.2, last: 0.1, opp: 0.1 };
+const ARC = 2 * Math.PI * 50; // verdict gauge circumference (r=50)
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -274,6 +275,7 @@ function run() {
   score = wsum ? score / wsum : null;
 
   renderHead(label, line, side, score, graded);
+  renderSummary(cols, line, side);
   renderRates(graded);
   renderChart(cols, line, side);
   renderLog(cols, line, side, label);
@@ -290,25 +292,92 @@ function renderHead(label, line, side, score, graded) {
   img.src = a.headshot?.href || "";
   img.alt = a.headshot?.href ? player.name : "";
   $("#r-name").textContent = player.name;
-  const bits = [LEAGUES[player.league].label, a.team?.displayName, a.position?.abbreviation].filter(Boolean);
+  $("#r-meta").textContent = [LEAGUES[player.league].label, a.team?.displayName, a.position?.displayName || a.position?.abbreviation].filter(Boolean).join(" · ");
   if (player.next) {
     const when = player.next.date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
-    bits.push(`Next: ${player.next.home ? "vs" : "@"} ${player.next.opp}, ${when}`);
+    $("#r-next").textContent = `Next · ${player.next.home ? "vs" : "@"} ${player.next.opp} · ${when}`;
+  } else {
+    $("#r-next").textContent = "";
   }
-  $("#r-meta").textContent = bits.join(" · ");
+  $("#r-prop").innerHTML = `<span class="side-txt">${side}</span><span class="line-num">${fmt(line)}</span><span class="stat-txt">${esc(label)}</span>`;
 
   const v = $("#verdict");
+  const arc = $("#arc");
+  v.classList.remove("good", "lean", "pass");
   const thin = (graded.find((w) => w.key === "season")?.n || 0) < 5;
   if (score === null) {
-    v.innerHTML = `<span class="word pass">No data</span><span class="why">No graded games for this line.</span>`;
+    v.classList.add("pass");
+    $("#score").textContent = "–";
+    $("#word").textContent = "No data";
+    $("#why").innerHTML = "<span>No graded games for this line.</span>";
+    arc.style.strokeDashoffset = ARC;
     return;
   }
   const [cls, word] = score >= 0.65 ? ["good", "Good"] : score >= 0.55 ? ["lean", "Lean"] : ["pass", "Pass"];
+  v.classList.add(cls);
+  $("#score").textContent = pct(score);
+  $("#word").textContent = word;
+  arc.style.stroke = `url(#g-${cls})`;
+  arc.style.strokeDashoffset = ARC;
+  requestAnimationFrame(() => requestAnimationFrame(() => { arc.style.strokeDashoffset = ARC * (1 - score); }));
+
   const other = side === "Over" ? "Under" : "Over";
-  const notes = [`${side} ${fmt(line)} ${label.toLowerCase()} · blended ${pct(score)}`];
+  const notes = [];
+  if (score >= 0.65) notes.push(`Cleared this line in most recent windows.`);
+  else if (score >= 0.55) notes.push(`Slightly better than a coin flip. Size it small.`);
+  else notes.push(`Hasn't cleared this line often enough.`);
   if (score <= 0.35) notes.push(`The ${other} has hit ${pct(1 - score)} blended.`);
-  if (thin) notes.push("Few games this season, so lean on last season with care.");
-  v.innerHTML = `<span class="word ${cls}">${word}</span>${notes.map((n) => `<span class="why">${esc(n)}</span>`).join("")}`;
+  if (thin) notes.push("Few games this season, so last season carries more weight.");
+  $("#why").innerHTML = notes.map((n) => `<span>${esc(n)}</span>`).join("");
+}
+
+function renderSummary(cols, line, side) {
+  const vals = player.games.map((g) => value(g, cols));
+  const l10 = vals.slice(0, 10);
+  const cur = player.games.filter((g) => g.season === "cur").map((g) => value(g, cols));
+  const avg = (a) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : null);
+  const median = (a) => {
+    if (!a.length) return null;
+    const s = [...a].sort((x, y) => x - y), m = s.length >> 1;
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  };
+  // Current streak: consecutive most-recent games on the same side of the line (pushes end it)
+  const res = (v) => (v === line ? "push" : (v > line) === (side === "Over") ? "hit" : "miss");
+  let streak = 0;
+  const first = vals.length ? res(vals[0]) : null;
+  for (const v of vals) { if (res(v) === first && first !== "push") streak++; else break; }
+  const a10 = avg(l10);
+  const edge = a10 === null ? null : (side === "Over" ? a10 - line : line - a10);
+  const f1 = (x) => (x === null ? "–" : fmt(+x.toFixed(1)));
+  const cells = [
+    ["Avg L10", f1(a10), ""],
+    ["Median L10", f1(median(l10)), ""],
+    [player.seasons.cur.replace(" Regular Season", "") + " avg", f1(avg(cur)), ""],
+    ["Cushion", edge === null ? "–" : `${edge > 0 ? "+" : ""}${f1(edge)}`, edge === null ? "" : edge > 0 ? "up" : "down"],
+    ["High / Low L10", l10.length ? `${fmt(Math.max(...l10))} / ${fmt(Math.min(...l10))}` : "–", ""],
+    ["Streak", streak && first !== "push" ? `${streak} ${first === "hit" ? "hit" : "miss"}${streak > 1 ? (first === "hit" ? "s" : "es") : ""}` : "–", first === "hit" ? "up" : first === "miss" ? "down" : ""],
+  ];
+  $("#summary").innerHTML = cells.map(([k, v, c]) => `<div><span class="label">${esc(k)}</span><span class="v ${c}">${esc(v)}</span></div>`).join("");
+}
+
+/* ---------- Example checks ---------- */
+const EXAMPLES = [
+  { id: "3112335", league: "nba", name: "Nikola Jokic", stat: "Pts + Reb + Ast", line: 50.5, side: "Over", short: "PRA" },
+  { id: "4278073", league: "nba", name: "Shai Gilgeous-Alexander", stat: "Points", line: 30.5, side: "Over", short: "PTS" },
+  { id: "5104157", league: "nba", name: "Victor Wembanyama", stat: "Rebounds", line: 11.5, side: "Over", short: "REB" },
+  { id: "4362628", league: "nfl", name: "Ja'Marr Chase", stat: "Receiving yards", line: 79.5, side: "Over", short: "REC YDS" },
+  { id: "4429795", league: "nfl", name: "Jahmyr Gibbs", stat: "Rush + rec yards", line: 109.5, side: "Over", short: "RUSH+REC" },
+];
+function renderExamples() {
+  $("#examples").innerHTML = `<span class="label">Try</span>` + EXAMPLES.map((e, i) =>
+    `<button type="button" class="chip" data-i="${i}">${esc(e.name.split(" ").slice(-1)[0])} ${e.side === "Over" ? "o" : "u"}<b>${fmt(e.line)}</b> ${esc(e.short)}</button>`).join("");
+  $("#examples").addEventListener("click", (ev) => {
+    const b = ev.target.closest(".chip");
+    if (!b) return;
+    const e = EXAMPLES[+b.dataset.i];
+    $("#line").value = e.line;
+    choose({ id: e.id, league: e.league, displayName: e.name }, { stat: e.stat, line: e.line, side: e.side });
+  });
 }
 
 function renderRates(graded) {
@@ -383,7 +452,11 @@ function writeUrl(label, line, side) {
 async function readUrl() {
   const q = new URLSearchParams(location.search);
   const id = q.get("p"), league = q.get("l");
-  if (!id || !LEAGUES[league]) return;
+  if (!id || !LEAGUES[league]) {
+    // No shared link: open on the first example so the page shows a real check
+    const e = EXAMPLES[0];
+    return choose({ id: e.id, league: e.league, displayName: e.name }, { stat: e.stat, line: e.line, side: e.side });
+  }
   const line = q.get("line");
   await choose({ id, league, displayName: "player" }, { stat: q.get("s"), line: line === null ? null : parseFloat(line), side: q.get("side") });
   if (player) input.value = player.name;
@@ -397,4 +470,13 @@ $("#form").addEventListener("submit", (e) => {
 $("#stat").addEventListener("change", () => { if ($("#line").value !== "" && !$("#result").hidden) run(); });
 document.querySelectorAll('input[name="side"]').forEach((r) => r.addEventListener("change", () => { if (!$("#result").hidden) run(); }));
 
+document.addEventListener("keydown", (e) => {
+  if (e.key === "/" && !/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName)) {
+    e.preventDefault();
+    input.focus();
+    input.select();
+  }
+});
+
+renderExamples();
 readUrl();

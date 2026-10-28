@@ -3,26 +3,52 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Prop Check</title>
-<meta name="description" content="Check any NBA or NFL player prop against the player's game logs: last 5, last 10, season, last season and head-to-head.">
+<title>PropCheck</title>
+<meta name="description" content="Check any NBA, WNBA or NFL player prop against real game logs. Hit rates, trends and a clear verdict in seconds.">
+<meta name="theme-color" content="#070a10">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230e1522'/%3E%3Crect x='7' y='16' width='4' height='9' rx='1' fill='%236ea8ff'/%3E%3Crect x='14' y='10' width='4' height='15' rx='1' fill='%236ea8ff'/%3E%3Crect x='21' y='6' width='4' height='19' rx='1' fill='%233ddc97'/%3E%3Cpath d='M5 14h22' stroke='%23e8eef7' stroke-width='1.5' stroke-dasharray='2 2'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=Libre+Franklin:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header class="mast">
-  <div class="wrap mast-inner">
-    <h1>Prop Check</h1>
-    <p class="tag">Type a player, pick the stat and the line. See how often they've cleared it.</p>
+<div class="backdrop" aria-hidden="true"></div>
+
+<nav class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="./" aria-label="PropCheck home">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="8" class="mark-bg"/>
+        <rect x="7" y="16" width="4" height="9" rx="1" class="mark-bar"/>
+        <rect x="14" y="10" width="4" height="15" rx="1" class="mark-bar"/>
+        <rect x="21" y="6" width="4" height="19" rx="1" class="mark-hit"/>
+        <path d="M5 14h22" class="mark-line"/>
+      </svg>
+      <span>Prop<b>Check</b></span>
+    </a>
+    <div class="nav-right">
+      <span class="leagues">NBA · NFL · WNBA</span>
+      <span class="live"><i></i>Live game logs</span>
+    </div>
   </div>
+</nav>
+
+<header class="hero wrap">
+  <p class="eyebrow">Player prop research</p>
+  <h1>Know the number<br>before you bet it.</h1>
+  <p class="lede">Search any player, set the line, and see how often they've cleared it: last 5, last 10, this season, last season, and against the next opponent.</p>
 </header>
 
 <main class="wrap">
-  <form id="form" class="slip-form" autocomplete="off">
+  <form id="form" class="console" autocomplete="off">
     <div class="field player-field">
       <label for="player">Player</label>
-      <input id="player" type="text" placeholder="e.g. Jalen Brunson" aria-autocomplete="list" aria-controls="suggest" aria-expanded="false" role="combobox">
+      <div class="search">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="6"/><path d="M13.5 13.5 18 18"/></svg>
+        <input id="player" type="text" placeholder="Search a player" aria-autocomplete="list" aria-controls="suggest" aria-expanded="false" role="combobox">
+        <kbd>/</kbd>
+      </div>
       <ul id="suggest" class="suggest" role="listbox" hidden></ul>
     </div>
     <div class="field">
@@ -40,37 +66,83 @@
         <input type="radio" name="side" id="side-under" value="Under"><label for="side-under">Under</label>
       </div>
     </div>
-    <button type="submit" class="go" id="go">Check it</button>
+    <button type="submit" class="go" id="go">Run check <span aria-hidden="true">→</span></button>
   </form>
 
+  <div class="examples" id="examples" aria-label="Example checks"></div>
   <p id="status" class="status" role="status"></p>
 
   <section id="result" hidden>
-    <div class="head">
-      <img id="headshot" alt="" width="96" height="70">
-      <div class="who">
-        <h2 id="r-name"></h2>
-        <p id="r-meta" class="muted"></p>
-      </div>
-      <div id="verdict" class="verdict"></div>
+    <div class="grid-top">
+      <article class="panel player-card">
+        <div class="avatar"><img id="headshot" alt="" width="120" height="88"></div>
+        <div class="who">
+          <h2 id="r-name"></h2>
+          <p id="r-meta" class="muted"></p>
+          <p id="r-next" class="next"></p>
+        </div>
+        <div class="prop-tag" id="r-prop"></div>
+      </article>
+
+      <article class="panel verdict-card" id="verdict">
+        <div class="gauge">
+          <svg viewBox="0 0 120 120" aria-hidden="true">
+            <defs>
+              <linearGradient id="g-good" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6ea8ff"/><stop offset="1" stop-color="#3ddc97"/></linearGradient>
+              <linearGradient id="g-lean" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffdd8a"/><stop offset="1" stop-color="#ffb23e"/></linearGradient>
+              <linearGradient id="g-pass" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff9a8a"/><stop offset="1" stop-color="#ff5f6d"/></linearGradient>
+            </defs>
+            <circle cx="60" cy="60" r="50" class="track"/>
+            <circle cx="60" cy="60" r="50" class="arc" id="arc"/>
+          </svg>
+          <div class="gauge-num"><span id="score">–</span><small>blended</small></div>
+        </div>
+        <div class="verdict-text">
+          <span class="label">Verdict</span>
+          <span class="word" id="word"></span>
+          <div id="why" class="why"></div>
+        </div>
+      </article>
     </div>
 
+    <div class="summary" id="summary"></div>
+
+    <div class="section-head"><h3>Hit rate by window</h3></div>
     <div id="rates" class="rates"></div>
 
-    <div class="block-head"><h3>Recent games</h3><span class="muted" id="chart-sub"></span></div>
-    <div class="chart-scroll"><div id="chart" class="chart"></div></div>
+    <article class="panel chart-panel">
+      <div class="section-head in"><h3>Recent games</h3><span class="muted" id="chart-sub"></span></div>
+      <div class="chart-scroll"><div id="chart" class="chart"></div></div>
+      <div class="legend"><span><i class="hit"></i>Hit</span><span><i class="miss"></i>Miss</span><span><i class="push"></i>Push</span><span><i class="ln"></i>Your line</span></div>
+    </article>
 
-    <div class="block-head"><h3>Game log</h3><span class="muted" id="avg"></span></div>
-    <div class="table-scroll"><table id="log" class="tbl"></table></div>
+    <article class="panel">
+      <div class="section-head in"><h3>Game log</h3><span class="muted" id="avg"></span></div>
+      <div class="table-scroll"><table id="log" class="tbl"></table></div>
+    </article>
   </section>
 
-  <section id="how" class="how">
-    <h3>How the verdict works</h3>
-    <p>Each window's hit rate counts the games the player went over (or under) your line. Pushes don't count. The verdict blends them, weighted toward recent form: last 10 (35%), this season (25%), last 5 (20%), last season (10%) and vs. the next opponent (10%). Windows with no games are skipped.</p>
-    <p><strong>Good</strong> means a blended rate of 65% or better. <strong>Lean</strong> means 55 to 64%. <strong>Pass</strong> means under 55%. Game logs don't know about injuries, minutes changes or who's in the lineup, so check the news before you bet.</p>
-    <p class="muted">Stats from ESPN. For entertainment. 21+. If gambling stops being fun, call 1-800-GAMBLER.</p>
+  <section class="method">
+    <div>
+      <span class="eyebrow">Methodology</span>
+      <h3>How the verdict works</h3>
+    </div>
+    <div class="method-body">
+      <p>Each window counts the games where the player went over (or under) your line. Pushes don't count. The blended score weights recent form most: last 10 (35%), this season (25%), last 5 (20%), last season (10%) and vs. the next opponent (10%). Windows with no games are skipped.</p>
+      <ul class="scale">
+        <li><b class="t-good">Good</b> 65% and up</li>
+        <li><b class="t-lean">Lean</b> 55 to 64%</li>
+        <li><b class="t-pass">Pass</b> under 55%</li>
+      </ul>
+      <p class="muted">Game logs don't know about injuries, minutes changes or lineups. Check the news before you bet.</p>
+    </div>
   </section>
 </main>
+
+<footer class="foot wrap">
+  <span>Stats from ESPN, regular season only.</span>
+  <span>For entertainment. 21+. Gambling problem? Call 1-800-GAMBLER.</span>
+</footer>
 
 <script src="app.js"></script>
 </body>
